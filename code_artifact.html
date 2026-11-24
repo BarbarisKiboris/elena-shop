@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0e14">
+    <title>Магазин «Елена»</title>
+
+    <!-- Шрифт Inter с системным фолбэком -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        /* Базовые CSS-переменные для плавного фонового свечения */
+        :root {
+            --glow-primary: rgba(148, 163, 184, 0.16);
+            --glow-secondary: rgba(51, 65, 85, 0.06);
+        }
+
+        html, body {
+            background-color: #0b0e14;
+            color: #f8fafc;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* Адаптация цвета мягкого радиального свечения под статус */
+        body[data-status="loading"] {
+            --glow-primary: rgba(148, 163, 184, 0.16);
+            --glow-secondary: rgba(51, 65, 85, 0.06);
+        }
+
+        body[data-status="open"] {
+            --glow-primary: rgba(16, 185, 129, 0.30);
+            --glow-secondary: rgba(5, 150, 105, 0.10);
+        }
+
+        body[data-status="closing"] {
+            --glow-primary: rgba(245, 158, 11, 0.32);
+            --glow-secondary: rgba(234, 88, 12, 0.11);
+        }
+
+        body[data-status="closed"] {
+            --glow-primary: rgba(225, 29, 72, 0.22);
+            --glow-secondary: rgba(159, 18, 57, 0.08);
+        }
+
+        /* Мягкое фоновое свечение за центральной карточкой */
+        .ambient-glow {
+            position: fixed;
+            top: 48%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120vw;
+            max-width: 720px;
+            height: 64vh;
+            max-height: 540px;
+            border-radius: 9999px;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(96px);
+            background: radial-gradient(circle, var(--glow-primary) 0%, var(--glow-secondary) 48%, transparent 72%);
+            transition: background 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* Моноширинные цифры для таймера и времени */
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: "tnum" 1;
+        }
+
+        /* Плавная пульсация индикатора для статусов «ОТКРЫТО» и «СКОРО ЗАКРЫТИЕ» */
+        @keyframes statusPulseRing {
+            0% {
+                transform: scale(1);
+                opacity: 0.75;
+            }
+            75%, 100% {
+                transform: scale(2.6);
+                opacity: 0;
+            }
+        }
+
+        .status-pulse-ring {
+            animation: statusPulseRing 2.1s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        /* Перенос многострочного текста заметки */
+        .note-content {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+<body data-status="loading" class="min-h-screen flex flex-col items-center justify-center bg-[#0b0e14] text-slate-50 px-4 py-8 selection:bg-emerald-500/30 selection:text-emerald-200">
+
+    <!-- Динамическое радиальное свечение на фоне -->
+    <div class="ambient-glow" aria-hidden="true"></div>
+
+    <!-- Основной центрированный контейнер -->
+    <main class="relative z-10 w-full max-w-md mx-auto flex flex-col items-center justify-center">
+
+        <!-- Заголовок магазина -->
+        <header class="text-center mb-6 sm:mb-7">
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-200/95">
+                Магазин «Елена»
+            </h1>
+        </header>
+
+        <!-- Центральная карточка статуса -->
+        <section id="status-card" class="w-full rounded-3xl bg-[#121722]/80 backdrop-blur-2xl border border-slate-700/50 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] px-6 py-9 sm:px-8 sm:py-11 text-center transition-all duration-500">
+
+            <!-- Состояние первичной загрузки -->
+            <div id="view-loading" class="py-8 flex flex-col items-center justify-center gap-4">
+                <div class="w-9 h-9 rounded-full border-2 border-slate-700/80 border-t-slate-200 animate-spin" aria-hidden="true"></div>
+                <p class="text-sm font-medium text-slate-400 tracking-wide">
+                    Загрузка статуса...
+                </p>
+            </div>
+
+            <!-- Состояние первичной ошибки сети (если первый запрос не прошёл) -->
+            <div id="view-initial-error" class="hidden py-6 flex flex-col items-center justify-center gap-4">
+                <div class="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M12 18.75h.008v.008H12v-.008z" />
+                    </svg>
+                </div>
+                <div class="space-y-1">
+                    <p class="text-base font-semibold text-slate-100">
+                        Нет связи с сервером
+                    </p>
+                    <p class="text-xs text-slate-400">
+                        Проверьте подключение к интернету
+                    </p>
+                </div>
+                <button id="btn-retry" type="button" class="mt-1 px-5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 active:scale-[0.98] border border-slate-700/80 text-xs sm:text-sm font-semibold text-slate-100 transition-all">
+                    Повторить
+                </button>
+            </div>
+
+            <!-- Основной вид статуса магазина -->
+            <div id="view-status" class="hidden">
+
+                <!-- Индикатор статуса (пульсирующий для open/closing, статичный для closed) -->
+                <div class="flex justify-center mb-6">
+                    <div class="relative flex items-center justify-center w-6 h-6">
+                        <span id="status-dot-ring" class="status-pulse-ring absolute inline-flex h-4 w-4 rounded-full bg-emerald-400"></span>
+                        <span id="status-dot-core" class="relative inline-flex rounded-full h-4 w-4 bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.85)] transition-all duration-500"></span>
+                    </div>
+                </div>
+
+                <!-- Крупный заголовок статуса -->
+                <h2 id="status-title" class="text-5xl sm:text-6xl font-black tracking-tight text-emerald-400 leading-none transition-all duration-500">
+                    ОТКРЫТО
+                </h2>
+
+                <!-- Блок обратного отсчёта (только для статуса «СКОРО ЗАКРЫТИЕ») -->
+                <div id="closing-block" class="hidden mt-6">
+                    <p id="countdown-display" class="text-4xl sm:text-5xl font-extrabold text-amber-300 tabular-nums tracking-tight leading-none">
+                        30:00
+                    </p>
+
+                    <!-- Плавная шкала прогресса оставшегося времени -->
+                    <div class="mt-5 w-full max-w-[260px] mx-auto h-2 bg-slate-800/90 rounded-full overflow-hidden">
+                        <div id="countdown-progress" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 rounded-full transition-all duration-500 ease-linear" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Встроенный блок заметки (виден только если есть текст и магазин не закрылся по таймеру) -->
+                <div id="note-box" class="hidden mt-7 rounded-2xl bg-slate-900/65 border border-slate-700/60 px-4 py-3.5 text-left">
+                    <div class="flex items-start gap-3">
+                        <div class="shrink-0 w-7 h-7 rounded-xl bg-sky-500/12 border border-sky-400/20 flex items-center justify-center text-sky-400 mt-0.5">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                            </svg>
+                        </div>
+                        <p id="note-text" class="note-content min-w-0 flex-1 text-sm sm:text-[15px] leading-relaxed font-medium text-slate-200"></p>
+                    </div>
+                </div>
+
+                <!-- Минималистичный футер со временем и мягким индикатором ошибки сети -->
+                <footer class="mt-8 pt-4 border-t border-slate-800/75 flex flex-col items-center gap-2.5">
+                    <p id="footer-time" class="text-xs font-medium text-slate-400/90 tabular-nums tracking-wide">
+                        Обновлено в --:--
+                    </p>
+
+                    <div id="network-warning" class="hidden items-center justify-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-3 py-1 text-[11px] font-medium text-amber-300/95">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                        <span>Нет связи с сервером</span>
+                    </div>
+                </footer>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Подключение к Supabase и живой таймер -->
+    <script>
+        const SUPABASE_URL = 'https://wcxctieaoimlqpgpjwrq.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_IocWN3RaICyyJTRai_gBdQ_FGwC_BQc';
+
+        (function () {
+            'use strict';
+
+            // =========================================================================
+            // 1. Константы и состояние приложения
+            // =========================================================================
+            const POLL_INTERVAL_MS = 10000;
+            const FETCH_TIMEOUT_MS = 8000;
+            const FALLBACK_DURATION_MS = 30 * 60 * 1000; // 30 минут по умолчанию
+
+            const timeFormatter = new Intl.DateTimeFormat('ru-RU', {
+                timeZone: 'Europe/Kaliningrad',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            const state = {
+                hasLoadedOnce: false,     // Получен ли хотя бы один успешный ответ от Supabase
+                isFetching: false,        // Защита от одновременных параллельных запросов
+                networkError: false,      // Флаг отсутствия связи с сервером
+                status: 'closed',         // 'open' | 'closing' | 'closed'
+                closesAtMs: null,         // Timestamp окончания таймера закрытия (мс)
+                totalDurationMs: FALLBACK_DURATION_MS, // Общая длительность для прогресс-бара (мс)
+                updatedAtMs: null,        // Timestamp последнего обновления (мс)
+                note: '',                 // Активный текст заметки
+                countdownIntervalId: null // ID 1-секундного таймера
+            };
+
+            // =========================================================================
+            // 2. Ссылки на DOM-элементы
+            // =========================================================================
+            const els = {
+                body: document.body,
+                card: document.getElementById('status-card'),
+                viewLoading: document.getElementById('view-loading'),
+                viewInitialError: document.getElementById('view-initial-error'),
+                viewStatus: document.getElementById('view-status'),
+                btnRetry: document.getElementById('btn-retry'),
+
+                dotRing: document.getElementById('status-dot-ring'),
+                dotCore: document.getElementById('status-dot-core'),
+                statusTitle: document.getElementById('status-title'),
+
+                closingBlock: document.getElementById('closing-block'),
+                countdownDisplay: document.getElementById('countdown-display'),
+                countdownProgress: document.getElementById('countdown-progress'),
+
+                noteBox: document.getElementById('note-box'),
+                noteText: document.getElementById('note-text'),
+
+                footerTime: document.getElementById('footer-time'),
+                networkWarning: document.getElementById('network-warning')
+            };
+
+            // =========================================================================
+            // 3. Вспомогательные функции форматирования
+            // =========================================================================
+
+            /**
+             * Форматирует timestamp в строку ЧЧ:ММ строго по Europe/Kaliningrad
+             */
+            function formatKaliningradTime(timestampMs) {
+                try {
+                    if (!Number.isFinite(timestampMs)) return '--:--';
+                    return timeFormatter.format(new Date(timestampMs));
+                } catch (err) {
+                    const d = new Date(timestampMs);
+                    if (Number.isNaN(d.getTime())) return '--:--';
+                    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                }
+            }
+
+            /**
+             * Форматирует оставшиеся миллисекунды в MM:SS
+             */
+            function formatCountdownMMSS(remainingMs) {
+                const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
+                const mins = Math.floor(totalSec / 60);
+                const secs = totalSec % 60;
+                return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+
+            // =========================================================================
+            // 4. Управление 1-секундным таймером обратного отсчёта
+            // =========================================================================
+
+            function stopCountdown() {
+                if (state.countdownIntervalId !== null) {
+                    clearInterval(state.countdownIntervalId);
+                    state.countdownIntervalId = null;
+                }
+            }
+
+            function startCountdown() {
+                stopCountdown();
+                tickCountdown();
+                if (state.status === 'closing') {
+                    state.countdownIntervalId = setInterval(tickCountdown, 1000);
+                }
+            }
+
+            /**
+             * Обновляет цифры таймера и прогресс-бар.
+             * При наступлении closes_at мгновенно переводит UI в «ЗАКРЫТО» и скрывает заметку.
+             */
+            function tickCountdown() {
+                if (state.status !== 'closing' || !Number.isFinite(state.closesAtMs)) {
+                    stopCountdown();
+                    return;
+                }
+
+                const nowMs = Date.now();
+                const remainingMs = state.closesAtMs - nowMs;
+
+                // Время вышло — сразу переключаемся в «ЗАКРЫТО» без ожидания следующего опроса
+                if (remainingMs <= 0) {
+                    stopCountdown();
+                    state.status = 'closed';
+                    state.updatedAtMs = state.closesAtMs;
+                    state.closesAtMs = null;
+                    state.note = '';
+                    renderUI();
+                    return;
+                }
+
+                els.countdownDisplay.textContent = formatCountdownMMSS(remainingMs);
+
+                const rawPct = state.totalDurationMs > 0
+                    ? (remainingMs / state.totalDurationMs) * 100
+                    : 0;
+                const clampedPct = Math.max(0, Math.min(100, rawPct));
+                els.countdownProgress.style.width = `${clampedPct.toFixed(1)}%`;
+            }
+
+            // =========================================================================
+            // 5. Отрисовка интерфейса
+            // =========================================================================
+
+            function renderNetworkWarning() {
+                if (state.networkError && state.hasLoadedOnce) {
+                    els.networkWarning.classList.remove('hidden');
+                    els.networkWarning.classList.add('inline-flex');
+                } else {
+                    els.networkWarning.classList.add('hidden');
+                    els.networkWarning.classList.remove('inline-flex');
+                }
+            }
+
+            function renderUI() {
+                try {
+                    // До первого успешного ответа показываем спиннер или экран повторной попытки
+                    if (!state.hasLoadedOnce) {
+                        els.body.setAttribute('data-status', 'loading');
+                        els.card.className = 'w-full rounded-3xl bg-[#121722]/80 backdrop-blur-2xl border border-slate-700/50 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.5)] px-6 py-9 sm:px-8 sm:py-11 text-center transition-all duration-500';
+                        els.viewStatus.classList.add('hidden');
+
+                        if (state.networkError) {
+                            els.viewLoading.classList.add('hidden');
+                            els.viewInitialError.classList.remove('hidden');
+                        } else {
+                            els.viewInitialError.classList.add('hidden');
+                            els.viewLoading.classList.remove('hidden');
+                        }
+                        return;
+                    }
+
+                    // Переключаемся на основной экран статуса
+                    els.viewLoading.classList.add('hidden');
+                    els.viewInitialError.classList.add('hidden');
+                    els.viewStatus.classList.remove('hidden');
+
+                    els.body.setAttribute('data-status', state.status);
+
+                    // Базовые классы карточки + акцентная рамка и тень под статус
+                    const baseCardClass = 'w-full rounded-3xl bg-[#121722]/80 backdrop-blur-2xl px-6 py-9 sm:px-8 sm:py-11 text-center transition-all duration-500 border';
+
+                    if (state.status === 'open') {
+                        els.card.className = `${baseCardClass} border-emerald-500/30 shadow-[0_24px_60px_-15px_rgba(16,185,129,0.22)]`;
+                        els.dotRing.className = 'status-pulse-ring absolute inline-flex h-4 w-4 rounded-full bg-emerald-400';
+                        els.dotCore.className = 'relative inline-flex rounded-full h-4 w-4 bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.85)] transition-all duration-500';
+                        els.statusTitle.className = 'text-5xl sm:text-6xl font-black tracking-tight text-emerald-400 drop-shadow-[0_0_26px_rgba(16,185,129,0.35)] leading-none transition-all duration-500';
+                        els.statusTitle.textContent = 'ОТКРЫТО';
+                        els.closingBlock.classList.add('hidden');
+                        els.footerTime.textContent = `Обновлено в ${formatKaliningradTime(state.updatedAtMs)}`;
+
+                    } else if (state.status === 'closing') {
+                        els.card.className = `${baseCardClass} border-amber-500/35 shadow-[0_24px_60px_-15px_rgba(245,158,11,0.24)]`;
+                        els.dotRing.className = 'status-pulse-ring absolute inline-flex h-4 w-4 rounded-full bg-amber-400';
+                        els.dotCore.className = 'relative inline-flex rounded-full h-4 w-4 bg-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.85)] transition-all duration-500';
+                        els.statusTitle.className = 'text-3xl sm:text-4xl font-black tracking-tight text-amber-400 drop-shadow-[0_0_24px_rgba(245,158,11,0.32)] leading-tight transition-all duration-500';
+                        els.statusTitle.textContent = 'СКОРО ЗАКРЫТИЕ';
+                        els.closingBlock.classList.remove('hidden');
+
+                        const closesStr = formatKaliningradTime(state.closesAtMs);
+                        const updatedStr = formatKaliningradTime(state.updatedAtMs);
+                        els.footerTime.textContent = `Закроется в ${closesStr} · Обновлено в ${updatedStr}`;
+
+                    } else {
+                        els.card.className = `${baseCardClass} border-rose-500/25 shadow-[0_24px_60px_-15px_rgba(225,29,72,0.18)]`;
+                        els.dotRing.className = 'hidden';
+                        els.dotCore.className = 'relative inline-flex rounded-full h-4 w-4 bg-rose-500/90 shadow-[0_0_14px_rgba(225,29,72,0.5)] transition-all duration-500';
+                        els.statusTitle.className = 'text-5xl sm:text-6xl font-black tracking-tight text-rose-400/95 drop-shadow-[0_0_20px_rgba(225,29,72,0.22)] leading-none transition-all duration-500';
+                        els.statusTitle.textContent = 'ЗАКРЫТО';
+                        els.closingBlock.classList.add('hidden');
+                        els.footerTime.textContent = `Обновлено в ${formatKaliningradTime(state.updatedAtMs)}`;
+                    }
+
+                    // Блок заметки (показывается только если текст не пустой)
+                    const cleanNote = (state.note || '').trim();
+                    if (cleanNote.length > 0) {
+                        els.noteText.textContent = cleanNote;
+                        els.noteBox.classList.remove('hidden');
+                    } else {
+                        els.noteText.textContent = '';
+                        els.noteBox.classList.add('hidden');
+                    }
+
+                    renderNetworkWarning();
+                } catch (err) {
+                    console.error('Ошибка отрисовки UI:', err);
+                }
+            }
+
+            // =========================================================================
+            // 6. Загрузка данных из Supabase REST API
+            // =========================================================================
+
+            /**
+             * Применяет строку из таблицы shop_status к локальному состоянию
+             */
+            function applyRecord(record) {
+                const validStatuses = ['open', 'closing', 'closed'];
+                const incomingStatus = validStatuses.includes(record.status) ? record.status : 'closed';
+
+                const parsedUpdatedMs = record.updated_at ? new Date(record.updated_at).getTime() : NaN;
+                const updatedAtMs = Number.isFinite(parsedUpdatedMs) ? parsedUpdatedMs : Date.now();
+                const incomingNote = typeof record.note === 'string' ? record.note.trim() : '';
+
+                state.hasLoadedOnce = true;
+                state.networkError = false;
+
+                if (incomingStatus === 'closing') {
+                    const closesAtMs = record.closes_at ? new Date(record.closes_at).getTime() : NaN;
+
+                    // Если closes_at уже в прошлом или отсутствует — сразу отображаем «ЗАКРЫТО» и прячем заметку
+                    if (!Number.isFinite(closesAtMs) || Date.now() >= closesAtMs) {
+                        stopCountdown();
+                        state.status = 'closed';
+                        state.closesAtMs = null;
+                        state.updatedAtMs = Number.isFinite(closesAtMs) ? closesAtMs : updatedAtMs;
+                        state.note = '';
+                        renderUI();
+                        return;
+                    }
+
+                    // Динамический расчёт длительности таймера для прогресс-бара (фолбэк — 30 мин)
+                    const remainingMs = closesAtMs - Date.now();
+                    const hasValidWindow = Number.isFinite(parsedUpdatedMs) && parsedUpdatedMs < closesAtMs;
+                    const durationMs = hasValidWindow
+                        ? (closesAtMs - parsedUpdatedMs)
+                        : Math.max(FALLBACK_DURATION_MS, remainingMs);
+
+                    state.status = 'closing';
+                    state.closesAtMs = closesAtMs;
+                    state.totalDurationMs = durationMs;
+                    state.updatedAtMs = updatedAtMs;
+                    state.note = incomingNote;
+
+                    renderUI();
+                    startCountdown();
+                    return;
+                }
+
+                // Статусы open или closed
+                stopCountdown();
+                state.status = incomingStatus;
+                state.closesAtMs = null;
+                state.updatedAtMs = updatedAtMs;
+                state.note = incomingNote;
+                renderUI();
+            }
+
+            /**
+             * Запрашивает актуальный статус из Supabase (строго с заголовком apikey без Authorization)
+             */
+            async function fetchStatus() {
+                if (state.isFetching) return;
+                state.isFetching = true;
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+                try {
+                    const url = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/shop_status?id=eq.1&select=status,closes_at,note,updated_at`;
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY
+                        },
+                        cache: 'no-store',
+                        signal: controller.signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const rows = await response.json();
+                    if (!Array.isArray(rows) || rows.length === 0) {
+                        throw new Error('Empty response from shop_status');
+                    }
+
+                    applyRecord(rows[0]);
+                } catch (err) {
+                    console.warn('Не удалось получить статус из Supabase:', err);
+                    state.networkError = true;
+                    renderUI();
+                } finally {
+                    clearTimeout(timeoutId);
+                    state.isFetching = false;
+                }
+            }
+
+            // =========================================================================
+            // 7. Инициализация и подписка на события
+            // =========================================================================
+
+            els.btnRetry.addEventListener('click', () => {
+                state.networkError = false;
+                renderUI();
+                fetchStatus();
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    fetchStatus();
+                }
+            });
+
+            window.addEventListener('online', () => {
+                fetchStatus();
+            });
+
+            window.addEventListener('offline', () => {
+                state.networkError = true;
+                renderUI();
+            });
+
+            // Первичная загрузка и опрос каждые 10 секунд
+            renderUI();
+            fetchStatus();
+            setInterval(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchStatus();
+                }
+            }, POLL_INTERVAL_MS);
+        })();
+    </script>
+</body>
+</html>
